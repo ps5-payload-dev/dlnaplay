@@ -1,0 +1,147 @@
+<rml>
+	<head>
+		<title>dlnaplay</title>
+		<link type="text/rcss" href="rml.rcss"/>
+		<link type="text/rcss" href="theme.rcss"/>
+		<link type="text/rcss" href="css/layout.rcss"/>
+		<link type="text/rcss" href="css/browse.rcss"/>
+		<link type="text/rcss" href="css/watch.rcss"/>
+		<link type="text/rcss" href="css/busy.rcss"/>
+	</head>
+	<body data-model="dlna" data-class-watching="watching">
+
+		<div id="shell">
+			<div id="topbar">
+				<img class="brand-logo" src="icons/logo.png"/>
+				<span class="brand-label">
+				</span>
+				<span class="crumb" data-if="view == 'browse'">{{crumb}}</span>
+				<span class="busy">
+					<span class="busy-dot busy-dot0"/>
+					<span class="busy-dot busy-dot1" data-if="busy"/>
+					<span class="busy-dot busy-dot2" data-if="busy"/>
+					<span class="busy-dot busy-dot3" data-if="busy"/>
+				</span>
+				<span class="spacer"/>
+				<span class="player-status" data-if="player_status != ''">{{player_status}}</span>
+				<span class="clock">{{clock}}</span>
+			</div>
+
+			<!-- ========================== Servers ========================== -->
+			<div id="content" data-if="view == 'servers'">
+				<div id="servers" class="pane active">
+					<div class="pane-head">
+						<span class="eyebrow">Media servers</span>
+						<span class="count" data-if="server_count > 0">{{server_count}}</span>
+					</div>
+					<div id="server-list" class="list">
+						<div class="server-row" data-for="srv : servers"
+						     data-class-selected="it_index == sel_server"
+						     data-event-click="select_server(it_index)">
+							<div class="srvicon">🖥</div>
+							<div class="srvinfo">
+								<div class="srvname">{{srv.name}}</div>
+								<div class="srvdetail">{{srv.detail}}</div>
+							</div>
+						</div>
+						<div class="empty" data-if="server_count == 0 && !busy">
+							No media servers found on this network.
+						</div>
+						<div class="empty" data-if="server_count == 0 && busy">
+							Searching the network...
+						</div>
+					</div>
+					<div class="status" data-if="status != ''">{{status}}</div>
+				</div>
+			</div>
+
+			<!-- =========================== Browse ========================== -->
+			<div id="content" data-if="view == 'browse'">
+				<div id="entries" class="pane active">
+					<div class="pane-head">
+						<span class="eyebrow">{{server_name}}</span>
+						<span class="count" data-if="entry_count > 0">{{entry_count}}</span>
+					</div>
+					<div id="entry-list" class="list">
+						<div class="entry-row" data-for="e : entries"
+						     data-class-selected="it_index == sel_entry"
+						     data-class-folder="e.folder"
+						     data-event-click="select_entry(it_index)">
+							<div class="eicon">{{e.icon}}</div>
+							<div class="einfo">
+								<div class="etitle">{{e.title}}</div>
+								<div class="emeta" data-if="e.meta != ''">{{e.meta}}</div>
+							</div>
+						</div>
+						<div class="empty" data-if="entry_count == 0 && !busy">
+							This folder is empty.
+						</div>
+						<div class="empty" data-if="entry_count == 0 && busy">
+							Loading...
+						</div>
+					</div>
+				</div>
+
+				<div id="details" class="pane">
+					<div class="pane-head">
+						<span class="eyebrow">Details</span>
+					</div>
+					<div class="detail-body" data-if="detail_title != ''">
+						<div class="detail-title">{{detail_title}}</div>
+						<div class="detail-meta" data-if="detail_meta != ''">{{detail_meta}}</div>
+						<div class="detail-desc" data-if="detail_desc != ''">{{detail_desc}}</div>
+						<img class="detail-art" data-if="detail_art != ''" data-attr-src="detail_art"/>						
+					</div>
+				</div>
+			</div>
+
+			<div id="footer">
+				<span class="chip" data-if="view == 'servers'"><img class="key-icon" src="icons/cross.png"/>&nbsp;Select</span>
+				<span class="chip" data-if="view == 'servers'"><img class="key-icon" src="icons/square.png"/>&nbsp;Rescan</span>
+				<span class="chip" data-if="view == 'browse'"><img class="key-icon" src="icons/cross.png"/>&nbsp;Select</span>
+				<span class="chip" data-if="view == 'browse'"><img class="key-icon" src="icons/circle.png"/>&nbsp;Back</span>
+			</div>
+		</div>
+
+		<!-- =========================== Watching ========================== -->
+
+		<!-- Audio: persistent now-playing card in the middle of the screen. -->
+		<div id="audio-card" data-if="watching && watch_audio">
+			<img class="np-art" data-if="np_art != ''" data-attr-src="np_art"/>
+			<div class="art" data-if="np_art == ''">🎵</div>
+			<div class="np-title">{{watch_title}}</div>
+			<div class="np-meta" data-if="watch_meta != ''">{{watch_meta}}</div>
+			<div class="np-atrack" data-if="watch_atrack != ''"><img class="key-icon" src="icons/triangle.png"/>&nbsp;{{watch_atrack}}</div>
+			<div class="watch-progress" data-if="watch_seekable">
+				<div class="bar" data-style-width="watch_progress"/>
+			</div>
+			<div class="np-time">{{watch_time}}</div>
+			<div class="np-state" data-if="watch_paused">PAUSED</div>
+		</div>
+
+		<!-- Video: auto-hiding transport bar over the frames. -->
+		<div id="watch-bar" data-if="watching && !watch_audio && info_visible">
+			<img class="watch-thumb" data-if="np_art != ''" data-attr-src="np_art"/>
+			<div class="watch-main">
+				<div class="watch-name">{{watch_title}}</div>
+				<div class="watch-atrack" data-if="watch_atrack != ''">Audio: {{watch_atrack}}</div>
+				<div class="watch-progress" data-if="watch_seekable">
+					<div class="bar" data-style-width="watch_progress"/>
+				</div>
+			</div>
+			<div class="watch-side">
+				<div class="watch-time">{{watch_time}}</div>
+				<div class="watch-hints">
+					<span class="chip" data-if="watch_seekable"><img class="key-icon" src="icons/dpad.png"/>&nbsp;Seek</span>
+					<span class="chip" data-if="watch_atrack != ''"><img class="key-icon" src="icons/triangle.png"/>&nbsp;Audio track</span>
+					<span class="chip"><img class="key-icon" src="icons/cross.png"/>&nbsp;Play/Pause</span>
+					<span class="chip"><img class="key-icon" src="icons/circle.png"/>&nbsp;Stop</span>
+					
+				</div>
+			</div>
+		</div>
+
+		<div id="toast" data-if="toast != ''">{{toast}}</div>
+
+	</body>
+</rml>
