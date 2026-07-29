@@ -16,6 +16,11 @@ extern "C" {
 #include "RmlUi/Backend.h"
 #include "player.h"
 
+// The visualizer is fed straight from the resampler's output, so the two
+// must agree on the PCM format.
+static_assert(kVizRate == kPlayerAudioRate, "visualizer sample rate mismatch");
+static_assert(kVizChannels == kPlayerAudioChannels, "visualizer channel count mismatch");
+
 namespace {
 
 // Packets buffered ahead of each decoder.
@@ -47,6 +52,12 @@ bool Player::PacketQueue::Pop(DemuxPacket& out, std::atomic<bool>& running, uint
 	out = std::move(q.front());
 	q.pop_front();
 	return true;
+}
+
+uint32_t Player::PacketQueue::Epoch()
+{
+	std::lock_guard<std::mutex> lock(mutex);
+	return flush_epoch;
 }
 
 void Player::PacketQueue::Clear()
@@ -180,6 +191,8 @@ void Player::Shutdown()
 		texture_ = nullptr;
 	}
 	tex_w_ = tex_h_ = 0;
+	// Owns an SDL texture too, and renderer_ is about to be dropped.
+	visualizer_.Shutdown();
 	renderer_ = nullptr;
 	avformat_network_deinit();
 }
@@ -671,6 +684,7 @@ void Player::StopPipeline()
 	vqueue_.Clear();
 	aqueue_.Clear();
 	DropDecodedFrames();
+	visualizer_.Reset();
 
 	if (audio_dev_)
 	{
@@ -869,6 +883,7 @@ void Player::AudioThread()
 			pts_accum = INT64_MIN;
 			avcodec_flush_buffers(actx_);
 			resampler_.Reset();
+			visualizer_.Reset();
 		}
 
 		// Track switch: the demuxer now queues a different stream, so the
@@ -881,6 +896,7 @@ void Player::AudioThread()
 			ctx_stream = (int)in.stream;
 			pts_accum = INT64_MIN;
 			resampler_.Reset();
+			visualizer_.Reset();
 		}
 
 		av_new_packet(pkt, (int)in.payload.size());
@@ -905,10 +921,27 @@ void Player::AudioThread()
 					// Keep at most ~2s of audio queued; otherwise an
 					// audio-only file is slurped whole into the SDL queue
 					// and pause/seek stop feeling immediate.
-					while (threads_running_ && !paused_ &&
-					       SDL_GetQueuedAudioSize(audio_dev_) > (Uint32)(2 * kAudioBytesPerSec))
+					//
+					// Pausing has to block here too. The device stops
+					// draining while paused, so skipping the throttle
+					// meant the rest of the buffered stream went into the
+					// queue in one go and the decoder ended up seconds
+					// ahead of playback -- 20+ seconds for formats with
+					// large frames, such as FLAC.
+					while (threads_running_ &&
+					       (paused_ ||
+					        SDL_GetQueuedAudioSize(audio_dev_) > (Uint32)(2 * kAudioBytesPerSec)))
 						std::this_thread::sleep_for(std::chrono::milliseconds(50));
 					if (!threads_running_)
+					{
+						av_frame_unref(frame);
+						break;
+					}
+					// A seek may have flushed the queue while this frame
+					// waited above. It is from before the jump, so drop it
+					// and pick up the new packets instead of playing a
+					// stale one after the seek.
+					if (aqueue_.Epoch() != epoch)
 					{
 						av_frame_unref(frame);
 						break;
@@ -923,6 +956,11 @@ void Player::AudioThread()
 						pts_accum += dur;
 					if (pts_accum != INT64_MIN)
 						audio_pts_end_ = pts_accum;
+
+					// Same block, same timestamp the master clock counts
+					// down from, so the animation lands on what is audible
+					// rather than on what was last decoded.
+					visualizer_.Push((const int16_t*)out.data(), got, pts_accum);
 				}
 				av_frame_unref(frame);
 			}
@@ -940,9 +978,19 @@ void Player::AudioThread()
 
 void Player::RenderVideo(int win_w, int win_h)
 {
-	if (!renderer_ || (!threads_running_ && !current_.frame))
+	if (!renderer_)
 		return;
-	if (video_stream_ < 0 && !current_.frame)
+
+	// Audio-only: no frame will ever arrive, and the cleared backbuffer would
+	// stay black behind the now-playing card. Draw the spectrum instead.
+	if (video_stream_ < 0)
+	{
+		if (active_ || threads_running_)
+			visualizer_.Render(renderer_, win_w, win_h, MasterClock(), paused_);
+		return;
+	}
+
+	if (!threads_running_ && !current_.frame)
 		return;
 
 	// Advance to the newest frame that is due (drop older late ones).

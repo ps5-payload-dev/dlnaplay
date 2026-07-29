@@ -26,6 +26,8 @@ extern "C" {
 
 #include <SDL.h>
 
+#include "visualizer.h"
+
 // One selectable audio stream of the open file.
 struct AudioTrackInfo {
   int stream_index = -1; // ffmpeg stream index, stable while the file is open
@@ -107,7 +109,8 @@ public:
 
   // Called every frame after the backbuffer has been cleared and before the
   // UI is rendered; the document body is transparent while playing, so the
-  // UI composites on top. Does nothing for audio-only playback.
+  // UI composites on top. For audio-only playback there is no video plane,
+  // so the spectrum visualizer is drawn in its place.
   void RenderVideo(int width, int height);
 
   // Short human-readable status ("h264 1920x1080 + aac", "Opening...",
@@ -160,6 +163,9 @@ private:
 
     void Push(DemuxPacket&& pkt);
     bool Pop(DemuxPacket& out, std::atomic<bool>& running, uint32_t* epoch);
+    // Current flush counter, for a decode thread to notice that a seek
+    // flushed the queue while it was blocked mid-frame.
+    uint32_t Epoch();
     void Clear();
     bool Full();
   };
@@ -214,6 +220,9 @@ private:
   // SelectAudioTrack(), consumed by the demux thread.
   std::atomic<int> audio_switch_target_{-1};
   AudioResampler resampler_;
+  // Fed by the audio thread with the same samples that go to the device;
+  // drawn by RenderVideo() when the file has no video stream.
+  Visualizer visualizer_;
   std::thread athread_;
   PacketQueue aqueue_;
   SDL_AudioDeviceID audio_dev_ = 0;
