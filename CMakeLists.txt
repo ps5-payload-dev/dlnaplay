@@ -33,6 +33,8 @@ add_executable(dlnaplay
 
 target_include_directories(dlnaplay PRIVATE src)
 
+target_compile_options(dlnaplay PRIVATE -Wall -Werror)
+
 target_link_libraries(dlnaplay PRIVATE
     SDL2::SDL2
     SDL2::SDL2main

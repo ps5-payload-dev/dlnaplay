@@ -6,10 +6,6 @@
 
 #include "Platform_SDL.h"
 
-static Rml::TouchList TouchEventToTouchList(SDL_Event& ev, Rml::Context* context, SDL_FingerID finger_id) {
-  const Rml::Vector2f position = Rml::Vector2f{ev.tfinger.x, ev.tfinger.y} * Rml::Vector2f{context->GetDimensions()};
-  return {Rml::Touch{static_cast<Rml::TouchId>(finger_id), position}};
-}
 
 SystemInterface_SDL::SystemInterface_SDL(SDL_Window* in_window)
   : window(in_window) {
