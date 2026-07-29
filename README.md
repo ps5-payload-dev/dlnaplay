@@ -1,3 +1,5 @@
+# This project has moved: https://github.com/ps5-payload-dev/jtplay
+
 # dlnaplay
 
 A audio/video player for jailbroken PS5s where the majority of the code
