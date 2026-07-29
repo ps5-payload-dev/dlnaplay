@@ -27,28 +27,28 @@
 				<span class="clock">{{clock}}</span>
 			</div>
 
-			<!-- ========================== Servers ========================== -->
-			<div id="content" data-if="view == 'servers'">
-				<div id="servers" class="pane active">
+			<!-- ========================== Sources ========================== -->
+			<div id="content" data-if="view == 'sources'">
+				<div id="sources" class="pane active">
 					<div class="pane-head">
-						<span class="eyebrow">Media servers</span>
-						<span class="count" data-if="server_count > 0">{{server_count}}</span>
+						<span class="eyebrow">Media sources</span>
+						<span class="count" data-if="source_count > 0">{{source_count}}</span>
 					</div>
-					<div id="server-list" class="list">
-						<div class="server-row" data-for="srv : servers"
-						     data-class-selected="it_index == sel_server"
-						     data-event-click="select_server(it_index)">
-							<div class="srvicon">🖥</div>
-							<div class="srvinfo">
-								<div class="srvname">{{srv.name}}</div>
-								<div class="srvdetail">{{srv.detail}}</div>
+					<div id="source-list" class="list">
+						<div class="source-row" data-for="src : sources"
+						     data-class-selected="it_index == sel_source"
+						     data-event-click="select_source(it_index)">
+							<div class="srcicon">{{src.icon}}</div>
+							<div class="srcinfo">
+								<div class="srcname">{{src.name}}</div>
+								<div class="srcdetail">{{src.detail}}</div>
 							</div>
 						</div>
-						<div class="empty" data-if="server_count == 0 && !busy">
-							No media servers found on this network.
+						<div class="empty" data-if="source_count == 0 && !busy">
+							No media sources found.
 						</div>
-						<div class="empty" data-if="server_count == 0 && busy">
-							Searching the network...
+						<div class="empty" data-if="source_count == 0 && busy">
+							Searching for media sources...
 						</div>
 					</div>
 					<div class="status" data-if="status != ''">{{status}}</div>
@@ -59,7 +59,7 @@
 			<div id="content" data-if="view == 'browse'">
 				<div id="entries" class="pane active">
 					<div class="pane-head">
-						<span class="eyebrow">{{server_name}}</span>
+						<span class="eyebrow">{{source_name}}</span>
 						<span class="count" data-if="entry_count > 0">{{entry_count}}</span>
 					</div>
 					<div id="entry-list" class="list">
@@ -96,8 +96,8 @@
 			</div>
 
 			<div id="footer">
-				<span class="chip" data-if="view == 'servers'"><img class="key-icon" src="icons/cross.png"/>&nbsp;Select</span>
-				<span class="chip" data-if="view == 'servers'"><img class="key-icon" src="icons/square.png"/>&nbsp;Rescan</span>
+				<span class="chip" data-if="view == 'sources'"><img class="key-icon" src="icons/cross.png"/>&nbsp;Select</span>
+				<span class="chip" data-if="view == 'sources'"><img class="key-icon" src="icons/square.png"/>&nbsp;Rescan</span>
 				<span class="chip" data-if="view == 'browse'"><img class="key-icon" src="icons/cross.png"/>&nbsp;Select</span>
 				<span class="chip" data-if="view == 'browse'"><img class="key-icon" src="icons/circle.png"/>&nbsp;Back</span>
 			</div>

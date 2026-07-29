@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Application shell, structured after ps5-payload-dev/tvhp: all RmlUi access
-// happens on the main thread; anything that touches the network (SSDP,
-// SOAP, opening a stream) runs on a single worker thread whose results are
-// polled once per frame in Update().
+// happens on the main thread; anything that touches the network or the disk
+// (discovery, browsing, opening a stream) runs on a single worker thread
+// whose results are polled once per frame in Update().
+//
+// The app itself is source-agnostic: it browses browse::Source objects that
+// browse::Providers discover (DLNA servers, local directories, ...).
 #pragma once
 
 #include <atomic>
@@ -20,8 +23,8 @@
 
 #include <RmlUi/Core.h>
 
+#include "browse/source.h"
 #include "player.h"
-#include "upnp/dlna.h"
 
 class App : public Rml::EventListener {
 public:
@@ -29,8 +32,9 @@ public:
   ~App() override;
 
   struct Options {
-    std::string assets_dir = "assets"; // directory containing main.rml
-    std::string cache_dir;             // artwork cache; "" = XDG default
+    std::string assets_dir = "assets";   // directory containing main.rml
+    std::string cache_dir;               // artwork cache; "" = XDG default
+    std::vector<std::string> media_dirs; // extra local roots to browse
   };
 
   // Creates the data model and loads <assets_dir>/main.rml. Must be called
@@ -49,19 +53,20 @@ public:
   void ProcessEvent(Rml::Event& event) override;
 
 private:
-  enum class View { Servers, Browse };
+  enum class View { Sources, Browse };
 
   // One level of the browse tree; kept on a stack so backing out is
   // instant and restores the selection.
   struct BrowseLevel {
-    std::string object_id;
+    std::string id;
     std::string title;
-    std::vector<upnp::DidlObject> objects;
+    std::vector<browse::Entry> entries;
     int selection = 0;
   };
 
   // Rows exposed to the RmlUi data model.
-  struct ServerRow {
+  struct SourceRow {
+    Rml::String icon;
     Rml::String name;
     Rml::String detail;
   };
@@ -76,33 +81,34 @@ private:
 
   // --- Worker ------------------------------------------------------------
   // Tasks run strictly in order on one background thread; that thread is
-  // the only one allowed to call into upnp:: or player_->Open()/Stop().
+  // the only one allowed to call Source::Browse()/Provider::Discover() or
+  // player_->Open()/Stop().
   void PostTask(std::function<void()> task);
   void WorkerMain();
 
-  // --- Servers view ------------------------------------------------------
+  // --- Sources view ------------------------------------------------------
   void StartDiscovery();
-  void RebuildServerRows();
-  void HandleKeyServers(Rml::Event& event, int key);
+  void RebuildSourceRows();
+  void HandleKeySources(Rml::Event& event, int key);
 
   // --- Browse view -------------------------------------------------------
-  void OpenServer(int index);            // browse the root of a server
-  void EnterContainer(const upnp::DidlObject& obj);
-  void LeaveContainer();                 // back one level (or to servers)
-  void RequestBrowse(const std::string& object_id, const std::string& title);
+  void OpenSource(int index);            // browse the root of a source
+  void EnterContainer(const browse::Entry& entry);
+  void LeaveContainer();                 // back one level (or to sources)
+  void RequestBrowse(const std::string& id, const std::string& title);
   void RebuildEntryRows();
   void RebuildDetail();
   void RebuildCrumb();
   void MoveSelection(int delta);
   void ActivateSelection();
   void HandleKeyBrowse(Rml::Event& event, int key);
-  const upnp::DidlObject* SelectedObject() const;
+  const browse::Entry* SelectedEntry() const;
   BrowseLevel* CurrentLevel();
 
   // --- Playback ----------------------------------------------------------
-  void PlayObject(const upnp::DidlObject& obj);
+  void PlayEntry(const browse::Entry& entry);
   void StopPlayback();                   // posts the stop; exits watch UI
-  void EnterWatch(const upnp::DidlObject& obj);
+  void EnterWatch(const browse::Entry& entry);
   void ExitWatch();
   void ShowWatchInfo(double seconds);
   void UpdateWatchOverlay();
@@ -116,21 +122,22 @@ private:
   void ShowToast(const std::string& text);
 
   // --- Artwork -----------------------------------------------------------
-  // Covers and thumbnails are plain http URLs in the DIDL metadata; RmlUi
-  // only loads textures through the file interface, so the worker downloads
-  // each one into a small on-disk cache and the UI binds the local path.
-  // Returns the cached path, or "" while the download is (or has been
+  // Cover URLs in the metadata are either plain http URLs or local file
+  // paths. Local paths are bound directly; RmlUi only loads textures
+  // through the file interface, so the worker downloads each http URL into
+  // a small on-disk cache and the UI binds the cached path.
+  // Returns the displayable path, or "" while a download is (or has been
   // scheduled to be) fetched in the background, or if it failed.
   std::string ArtPathFor(const std::string& url);
   void RefreshArtBindings();       // re-resolve detail/now-playing art
 
   // Data model bound state (main thread only).
   Rml::DataModelHandle model_;
-  Rml::String bind_view_ = "servers";
-  Rml::String bind_status_;       // servers view status line
+  Rml::String bind_view_ = "sources";
+  Rml::String bind_status_;       // sources view status line
   Rml::String bind_toast_;
   Rml::String bind_crumb_;        // breadcrumb of the browse path
-  Rml::String bind_server_name_;  // topbar: connected server
+  Rml::String bind_source_name_;  // topbar: connected source
   Rml::String bind_clock_;
   Rml::String bind_detail_title_;
   Rml::String bind_detail_meta_;
@@ -148,26 +155,27 @@ private:
   Rml::String bind_watch_progress_ = "0%"; // data-style-width; never empty
   Rml::String bind_watch_atrack_;  // active audio track label; "" when the
                                    // file has fewer than two audio tracks
-  Rml::String bind_detail_art_;    // local cached image path, "" = none
+  Rml::String bind_detail_art_;    // local image path, "" = none
   Rml::String bind_np_art_;        // now-playing artwork path, "" = none
 
-  std::vector<ServerRow> server_rows_;
+  std::vector<SourceRow> source_rows_;
   std::vector<EntryRow> entry_rows_;
-  int sel_server_ = 0;
-  int server_count_ = 0;
+  int sel_source_ = 0;
+  int source_count_ = 0;
   int sel_entry_ = 0;
   int entry_count_ = 0;
 
   // Backing data (main thread).
-  std::vector<upnp::MediaServer> servers_;
-  int current_server_ = -1;
-  std::vector<BrowseLevel> path_;   // root first
-  upnp::DidlObject playing_;        // item in the player right now
+  std::vector<std::unique_ptr<browse::Provider>> providers_;
+  std::vector<browse::SourcePtr> sources_;
+  browse::SourcePtr current_source_;   // source being browsed, or null
+  std::vector<BrowseLevel> path_;      // root first
+  browse::Entry playing_;              // item in the player right now
 
   std::unique_ptr<Player> player_;
   Rml::Context* context_ = nullptr;
   Rml::ElementDocument* document_ = nullptr;
-  View view_ = View::Servers;
+  View view_ = View::Sources;
 
   // Worker plumbing.
   std::thread worker_;
@@ -179,14 +187,14 @@ private:
   // Results the worker leaves for Update() to pick up.
   struct Pending {
     std::mutex mutex;
-    bool servers_ready = false;
-    std::vector<upnp::MediaServer> servers;
+    bool sources_ready = false;
+    std::vector<browse::SourcePtr> sources;
     std::string discover_error;
     bool browse_ready = false;
     uint32_t browse_request = 0;    // matches browse_request_ or is stale
-    std::string browse_object_id;
+    std::string browse_id;
     std::string browse_title;
-    upnp::BrowseResult browse;
+    browse::Listing browse;
     std::string browse_error;
     bool play_ready = false;
     bool play_ok = false;
@@ -206,5 +214,5 @@ private:
   double toast_deadline_ = 0.0;
   double info_deadline_ = 0.0;      // watch info bar auto-hide
   bool scroll_entries_pending_ = false;
-  bool scroll_servers_pending_ = false;
+  bool scroll_sources_pending_ = false;
 };

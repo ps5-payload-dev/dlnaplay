@@ -1,18 +1,18 @@
 /*
- * The servers view and the content browser. Row heights must stay in sync
- * with kServerRowPitch / kEntryRowPitch in app_internal.h.
+ * The sources view and the content browser. Row heights must stay in sync
+ * with kSourceRowPitch / kEntryRowPitch in app_internal.h.
  */
 
 /* ------------------------------------------------------------------ */
-/* Servers                                                            */
+/* Sources                                                            */
 /* ------------------------------------------------------------------ */
 
-#servers {
+#sources {
 	width: 1100px;
 	margin-left: 346px; /* centered inside the 1792px content strip */
 }
 
-.server-row {
+.source-row {
 	box-sizing: border-box;
 	display: flex;
 	flex-direction: row;
@@ -25,26 +25,26 @@
 	border-radius: 14px;
 }
 
-.server-row.selected {
+.source-row.selected {
 	background-color: #4dd6b81a;
 	border: 2px #4dd6b8;
 }
 
-.srvicon {
+.srcicon {
 	width: 72px;
 	font-size: 44px;
 	text-align: center;
 	margin-right: 20px;
 }
 
-.srvinfo {
+.srcinfo {
 	display: flex;
 	flex-direction: column;
 	flex: 1;
 	overflow: hidden;
 }
 
-.srvname {
+.srcname {
 	font-size: 32px;
 	font-weight: bold;
 	color: #e8edf7;
@@ -52,7 +52,7 @@
 	overflow: hidden;
 }
 
-.srvdetail {
+.srcdetail {
 	margin-top: 4px;
 	font-size: 22px;
 	color: #8593ab;

@@ -12,10 +12,10 @@
 
 namespace appdetail {
 
-// Row geometry; must match the stylesheets (.server-row / .entry-row height
+// Row geometry; must match the stylesheets (.source-row / .entry-row height
 // + margin-bottom) so keyboard scrolling can be computed without layout
 // queries on the generated rows.
-inline constexpr float kServerRowPitch = 96.0f + 12.0f;
+inline constexpr float kSourceRowPitch = 96.0f + 12.0f;
 inline constexpr float kEntryRowPitch = 76.0f + 10.0f;
 
 inline constexpr double kToastSec = 4.0;

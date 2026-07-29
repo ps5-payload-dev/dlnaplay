@@ -11,11 +11,11 @@
 
 using namespace appdetail;
 
-void App::PlayObject(const upnp::DidlObject& obj) {
-  playing_ = obj;
-  EnterWatch(obj);
+void App::PlayEntry(const browse::Entry& entry) {
+  playing_ = entry;
+  EnterWatch(entry);
 
-  const std::string url = obj.res_url;
+  const std::string url = entry.res_url;
   busy_ops_++;
   PostTask([this, url] {
     std::string error;
@@ -30,18 +30,18 @@ void App::PlayObject(const upnp::DidlObject& obj) {
   });
 }
 
-void App::EnterWatch(const upnp::DidlObject& obj) {
+void App::EnterWatch(const browse::Entry& entry) {
   bind_watching_ = true;
-  bind_watch_audio_ = obj.IsAudio();
-  bind_watch_title_ = obj.title.empty() ? "(untitled)" : obj.title;
+  bind_watch_audio_ = entry.IsAudio();
+  bind_watch_title_ = entry.title.empty() ? "(untitled)" : entry.title;
 
   std::string meta;
-  if (!obj.artist.empty())
-    meta = obj.artist;
-  if (!obj.album.empty())
-    meta += (meta.empty() ? "" : "  -  ") + obj.album;
-  if (meta.empty() && !obj.resolution.empty())
-    meta = obj.resolution;
+  if (!entry.artist.empty())
+    meta = entry.artist;
+  if (!entry.album.empty())
+    meta += (meta.empty() ? "" : "  -  ") + entry.album;
+  if (meta.empty() && !entry.resolution.empty())
+    meta = entry.resolution;
   bind_watch_meta_ = meta;
 
   bind_watch_paused_ = false;
@@ -163,8 +163,8 @@ bool App::PlayNeighbor(int direction) {
 
   // Locate the playing item by id; the selection may have moved.
   int index = -1;
-  for (size_t i = 0; i < level->objects.size(); i++) {
-    if (level->objects[i].id == playing_.id) {
+  for (size_t i = 0; i < level->entries.size(); i++) {
+    if (level->entries[i].id == playing_.id) {
       index = (int)i;
       break;
     }
@@ -172,15 +172,15 @@ bool App::PlayNeighbor(int direction) {
   if (index < 0)
     return false;
 
-  for (int i = index + direction; i >= 0 && i < (int)level->objects.size(); i += direction) {
-    const upnp::DidlObject& o = level->objects[i];
-    if (o.container || o.res_url.empty() || o.IsImage())
+  for (int i = index + direction; i >= 0 && i < (int)level->entries.size(); i += direction) {
+    const browse::Entry& e = level->entries[i];
+    if (!e.IsPlayable() || e.IsImage())
       continue;
     sel_entry_ = i;
     model_.DirtyVariable("sel_entry");
     RebuildDetail();
     scroll_entries_pending_ = true;
-    PlayObject(o);
+    PlayEntry(e);
     return true;
   }
   return false;

@@ -1,13 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
-// The servers view (SSDP discovery results) and the browse view (the
-// ContentDirectory tree of the chosen server).
+// The sources view (results from all browse::Providers) and the browse
+// view (the content tree of the chosen source). Everything here is
+// protocol-agnostic; the per-protocol work lives behind browse::Source.
 #include <algorithm>
 
 #include "app.h"
 #include "app_internal.h"
-#include "upnp/http.h"
-#include "upnp/ssdp.h"
 
 using namespace appdetail;
 
@@ -15,98 +14,83 @@ namespace {
 
 // A short glyph for the entry list; the emoji font is loaded as a fallback
 // face, so these render everywhere.
-Rml::String IconFor(const upnp::DidlObject& o) {
-  if (o.container)
-    return "📁";
-  if (o.IsAudio())
-    return "🎵";
-  if (o.IsVideo())
-    return "🎬";
-  if (o.IsImage())
-    return "🖼";
-  return "📄";
+Rml::String IconFor(const browse::Entry& e) {
+  switch (e.kind) {
+  case browse::Entry::Kind::Folder: return "📁";
+  case browse::Entry::Kind::Audio:  return "🎵";
+  case browse::Entry::Kind::Video:  return "🎬";
+  case browse::Entry::Kind::Image:  return "🖼";
+  default:                          return "📄";
+  }
 }
 
-std::string HostOf(const std::string& url) {
-  upnp::Url u;
-  if (!upnp::Url::Parse(url, u))
-    return url;
-  return u.host;
+const char* KindLabel(const browse::Entry& e) {
+  switch (e.kind) {
+  case browse::Entry::Kind::Folder: return "Folder";
+  case browse::Entry::Kind::Audio:  return "Audio";
+  case browse::Entry::Kind::Video:  return "Video";
+  case browse::Entry::Kind::Image:  return "Image";
+  default:                          return "Item";
+  }
 }
 
 } // namespace
 
 // ---------------------------------------------------------------------------
-// Servers view
+// Sources view
 // ---------------------------------------------------------------------------
-#include <iostream>
+
 void App::StartDiscovery() {
-  bind_status_ = "Searching for media servers...";
+  bind_status_ = "Searching for media sources...";
   model_.DirtyVariable("status");
 
   busy_ops_++;
   PostTask([this] {
-    std::string error;
-    std::vector<upnp::SsdpResult> found = upnp::SsdpSearch(kDiscoveryWaitMs, error);
-
-    std::vector<upnp::MediaServer> servers;
-    for (const upnp::SsdpResult& r : found) {
-      upnp::MediaServer server;
-      std::string derr;
-
-      if (upnp::DescribeServer(r.location, server, derr)) {
-        servers.push_back(std::move(server));
+    std::vector<browse::SourcePtr> sources;
+    std::string errors;
+    for (const std::unique_ptr<browse::Provider>& p : providers_) {
+      std::string error;
+      if (!p->Discover(sources, error) && !error.empty()) {
+        if (!errors.empty())
+          errors += "; ";
+        errors += std::string(p->Name()) + ": " + error;
       }
     }
-    // The same server can answer on several interfaces with different
-    // LOCATIONs but one UDN.
-    std::sort(servers.begin(), servers.end(),
-      [](const upnp::MediaServer& a, const upnp::MediaServer& b) {
-        return a.udn < b.udn;
-      });
-    servers.erase(std::unique(servers.begin(), servers.end(),
-      [](const upnp::MediaServer& a, const upnp::MediaServer& b) {
-        return !a.udn.empty() && a.udn == b.udn;
-      }), servers.end());
-    std::sort(servers.begin(), servers.end(),
-      [](const upnp::MediaServer& a, const upnp::MediaServer& b) {
-        return a.friendly_name < b.friendly_name;
-      });
 
     {
       std::lock_guard<std::mutex> lock(pending_.mutex);
-      pending_.servers_ready = true;
-      pending_.servers = std::move(servers);
-      pending_.discover_error = error;
+      pending_.sources_ready = true;
+      pending_.sources = std::move(sources);
+      pending_.discover_error = errors;
     }
     busy_ops_--;
   });
 }
 
-void App::RebuildServerRows() {
-  server_rows_.clear();
-  for (const upnp::MediaServer& s : servers_) {
-    ServerRow row;
-    row.name = s.friendly_name;
-    row.detail = s.model.empty() ? HostOf(s.location)
-                                 : s.model + "  -  " + HostOf(s.location);
-    server_rows_.push_back(std::move(row));
+void App::RebuildSourceRows() {
+  source_rows_.clear();
+  for (const browse::SourcePtr& s : sources_) {
+    SourceRow row;
+    row.icon = s->Icon();
+    row.name = s->Name();
+    row.detail = s->Detail();
+    source_rows_.push_back(std::move(row));
   }
-  server_count_ = (int)servers_.size();
-  sel_server_ = std::clamp(sel_server_, 0, std::max(0, server_count_ - 1));
-  model_.DirtyVariable("servers");
-  model_.DirtyVariable("server_count");
-  model_.DirtyVariable("sel_server");
-  scroll_servers_pending_ = true;
+  source_count_ = (int)sources_.size();
+  sel_source_ = std::clamp(sel_source_, 0, std::max(0, source_count_ - 1));
+  model_.DirtyVariable("sources");
+  model_.DirtyVariable("source_count");
+  model_.DirtyVariable("sel_source");
+  scroll_sources_pending_ = true;
 }
 
-void App::HandleKeyServers(Rml::Event& event, int key) {
+void App::HandleKeySources(Rml::Event& event, int key) {
   switch (key) {
   case Rml::Input::KI_UP:
-    sel_server_ = std::max(0, sel_server_ - 1);
+    sel_source_ = std::max(0, sel_source_ - 1);
     break;
   case Rml::Input::KI_DOWN:
-    sel_server_ = std::min(std::max(0, server_count_ - 1), sel_server_ + 1);
+    sel_source_ = std::min(std::max(0, source_count_ - 1), sel_source_ + 1);
     break;
   case Rml::Input::KI_SPACE:
     StartDiscovery();
@@ -114,15 +98,15 @@ void App::HandleKeyServers(Rml::Event& event, int key) {
     return;
   case Rml::Input::KI_RETURN:
   case Rml::Input::KI_NUMPADENTER:
-    if (sel_server_ < (int)servers_.size())
-      OpenServer(sel_server_);
+    if (sel_source_ < (int)sources_.size())
+      OpenSource(sel_source_);
     event.StopPropagation();
     return;
   default:
     return;
   }
-  model_.DirtyVariable("sel_server");
-  scroll_servers_pending_ = true;
+  model_.DirtyVariable("sel_source");
+  scroll_sources_pending_ = true;
   event.StopPropagation();
 }
 
@@ -134,24 +118,24 @@ App::BrowseLevel* App::CurrentLevel() {
   return path_.empty() ? nullptr : &path_.back();
 }
 
-const upnp::DidlObject* App::SelectedObject() const {
+const browse::Entry* App::SelectedEntry() const {
   if (path_.empty())
     return nullptr;
   const BrowseLevel& level = path_.back();
-  if (sel_entry_ < 0 || sel_entry_ >= (int)level.objects.size())
+  if (sel_entry_ < 0 || sel_entry_ >= (int)level.entries.size())
     return nullptr;
-  return &level.objects[sel_entry_];
+  return &level.entries[sel_entry_];
 }
 
-void App::OpenServer(int index) {
-  if (index < 0 || index >= (int)servers_.size())
+void App::OpenSource(int index) {
+  if (index < 0 || index >= (int)sources_.size())
     return;
-  current_server_ = index;
+  current_source_ = sources_[index];
   path_.clear();
   sel_entry_ = 0;
 
-  bind_server_name_ = servers_[index].friendly_name;
-  model_.DirtyVariable("server_name");
+  bind_source_name_ = current_source_->Name();
+  model_.DirtyVariable("source_name");
 
   view_ = View::Browse;
   bind_view_ = "browse";
@@ -160,26 +144,26 @@ void App::OpenServer(int index) {
   RebuildEntryRows();
   RebuildCrumb();
   RebuildDetail();
-  RequestBrowse("0", servers_[index].friendly_name);
+  RequestBrowse(current_source_->RootId(), current_source_->Name());
 }
 
-void App::RequestBrowse(const std::string& object_id, const std::string& title) {
-  if (current_server_ < 0)
+void App::RequestBrowse(const std::string& id, const std::string& title) {
+  if (!current_source_)
     return;
 
   const uint32_t request = ++browse_request_;
-  const upnp::MediaServer server = servers_[current_server_];
+  const browse::SourcePtr source = current_source_;
 
   busy_ops_++;
-  PostTask([this, request, server, object_id, title] {
-    upnp::BrowseResult result;
+  PostTask([this, request, source, id, title] {
+    browse::Listing result;
     std::string error;
-    upnp::Browse(server, object_id, result, error);
+    source->Browse(id, result, error);
     {
       std::lock_guard<std::mutex> lock(pending_.mutex);
       pending_.browse_ready = true;
       pending_.browse_request = request;
-      pending_.browse_object_id = object_id;
+      pending_.browse_id = id;
       pending_.browse_title = title;
       pending_.browse = std::move(result);
       pending_.browse_error = error;
@@ -188,22 +172,22 @@ void App::RequestBrowse(const std::string& object_id, const std::string& title) 
   });
 }
 
-void App::EnterContainer(const upnp::DidlObject& obj) {
+void App::EnterContainer(const browse::Entry& entry) {
   if (BrowseLevel* level = CurrentLevel())
     level->selection = sel_entry_;
-  RequestBrowse(obj.id, obj.title);
+  RequestBrowse(entry.id, entry.title);
 }
 
 void App::LeaveContainer() {
   browse_request_++; // invalidate any browse that is still in flight
   if (path_.size() <= 1) {
-    // At the root: back to the server list.
+    // At the root: back to the source list.
     path_.clear();
-    current_server_ = -1;
-    view_ = View::Servers;
-    bind_view_ = "servers";
+    current_source_.reset();
+    view_ = View::Sources;
+    bind_view_ = "sources";
     model_.DirtyVariable("view");
-    scroll_servers_pending_ = true;
+    scroll_sources_pending_ = true;
     return;
   }
   path_.pop_back();
@@ -217,23 +201,23 @@ void App::LeaveContainer() {
 void App::RebuildEntryRows() {
   entry_rows_.clear();
   if (const BrowseLevel* level = CurrentLevel()) {
-    for (const upnp::DidlObject& o : level->objects) {
+    for (const browse::Entry& e : level->entries) {
       EntryRow row;
-      row.icon = IconFor(o);
-      row.title = o.title.empty() ? "(untitled)" : o.title;
-      row.folder = o.container;
-      if (o.container) {
-        if (o.child_count >= 0)
-          row.meta = std::to_string(o.child_count) +
-            (o.child_count == 1 ? " entry" : " entries");
+      row.icon = IconFor(e);
+      row.title = e.title.empty() ? "(untitled)" : e.title;
+      row.folder = e.IsFolder();
+      if (e.IsFolder()) {
+        if (e.child_count >= 0)
+          row.meta = std::to_string(e.child_count) +
+            (e.child_count == 1 ? " entry" : " entries");
       } else {
         std::string meta;
-        if (o.duration_us > 0)
-          meta = FormatTime(o.duration_us);
-        if (!o.resolution.empty())
-          meta += (meta.empty() ? "" : "  -  ") + o.resolution;
-        if (meta.empty() && o.size_bytes >= 0)
-          meta = FormatSize(o.size_bytes);
+        if (e.duration_us > 0)
+          meta = FormatTime(e.duration_us);
+        if (!e.resolution.empty())
+          meta += (meta.empty() ? "" : "  -  ") + e.resolution;
+        if (meta.empty() && e.size_bytes >= 0)
+          meta = FormatSize(e.size_bytes);
         row.meta = meta;
       }
       entry_rows_.push_back(std::move(row));
@@ -258,29 +242,24 @@ void App::RebuildCrumb() {
 }
 
 void App::RebuildDetail() {
-  const upnp::DidlObject* o = SelectedObject();
-  if (!o) {
+  const browse::Entry* e = SelectedEntry();
+  if (!e) {
     bind_detail_title_.clear();
     bind_detail_meta_.clear();
     bind_detail_desc_.clear();
   } else {
-    bind_detail_title_ = o->title;
+    bind_detail_title_ = e->title;
 
-    std::string meta;
-    if (o->container) {
-      meta = "Folder";
-      if (o->child_count >= 0)
-        meta += "  -  " + std::to_string(o->child_count) +
-          (o->child_count == 1 ? " entry" : " entries");
+    std::string meta = KindLabel(*e);
+    if (e->IsFolder()) {
+      if (e->child_count >= 0)
+        meta += "  -  " + std::to_string(e->child_count) +
+          (e->child_count == 1 ? " entry" : " entries");
     } else {
-      if (o->IsAudio()) meta = "Audio";
-      else if (o->IsVideo()) meta = "Video";
-      else if (o->IsImage()) meta = "Image";
-      else meta = "Item";
-      if (o->duration_us > 0)
-        meta += "  -  " + FormatTime(o->duration_us);
-      if (o->size_bytes >= 0)
-        meta += "  -  " + FormatSize(o->size_bytes);
+      if (e->duration_us > 0)
+        meta += "  -  " + FormatTime(e->duration_us);
+      if (e->size_bytes >= 0)
+        meta += "  -  " + FormatSize(e->size_bytes);
     }
     bind_detail_meta_ = meta;
 
@@ -289,21 +268,12 @@ void App::RebuildDetail() {
       if (!value.empty())
         desc += std::string(label) + ": " + value + "\n";
     };
-    add("Artist", o->artist);
-    add("Album", o->album);
-    add("Genre", o->genre);
-    add("Date", o->date);
-    add("Resolution", o->resolution);
-    if (!o->protocol_info.empty()) {
-      // protocolInfo is "http-get:*:video/x-matroska:DLNA...."; the MIME
-      // type in the third field is the useful part.
-      size_t a = o->protocol_info.find(':');
-      size_t b = (a == std::string::npos) ? a : o->protocol_info.find(':', a + 1);
-      size_t c = (b == std::string::npos) ? b : o->protocol_info.find(':', b + 1);
-      if (b != std::string::npos)
-        add("Format", o->protocol_info.substr(b + 1,
-          (c == std::string::npos ? o->protocol_info.size() : c) - b - 1));
-    }
+    add("Artist", e->artist);
+    add("Album", e->album);
+    add("Genre", e->genre);
+    add("Date", e->date);
+    add("Resolution", e->resolution);
+    add("Format", e->format);
     bind_detail_desc_ = desc;
   }
   model_.DirtyVariable("detail_title");
@@ -324,13 +294,13 @@ void App::MoveSelection(int delta) {
 }
 
 void App::ActivateSelection() {
-  const upnp::DidlObject* o = SelectedObject();
-  if (!o)
+  const browse::Entry* e = SelectedEntry();
+  if (!e)
     return;
-  if (o->container) {
-    EnterContainer(*o);
-  } else if (!o->res_url.empty()) {
-    PlayObject(*o);
+  if (e->IsFolder()) {
+    EnterContainer(*e);
+  } else if (e->IsPlayable()) {
+    PlayEntry(*e);
   } else {
     ShowToast("This item has nothing to play");
   }

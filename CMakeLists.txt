@@ -23,6 +23,8 @@ add_executable(dlnaplay
     src/app_watch.cpp
     src/player.cpp
     src/visualizer.cpp
+    src/browse/dlna_source.cpp
+    src/browse/fs_source.cpp
     src/upnp/http.cpp
     src/upnp/ssdp.cpp
     src/upnp/dlna.cpp

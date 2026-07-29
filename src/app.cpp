@@ -12,6 +12,8 @@
 
 #include "app.h"
 #include "app_internal.h"
+#include "browse/dlna_source.h"
+#include "browse/fs_source.h"
 #include "upnp/http.h"
 
 using namespace appdetail;
@@ -57,6 +59,9 @@ bool App::Initialize(Rml::Context* context, const Options& options, std::string&
     if (::mkdir(dir.c_str(), 0755) == 0 || errno == EEXIST)
       art_dir_ = dir;
   }
+
+  providers_.push_back(std::make_unique<browse::FsProvider>());
+  providers_.push_back(std::make_unique<browse::DlnaProvider>(kDiscoveryWaitMs));
 
   worker_running_ = true;
   worker_ = std::thread(&App::WorkerMain, this);
@@ -130,11 +135,12 @@ bool App::SetupDataModel(Rml::Context* context, std::string& error) {
     return false;
   }
 
-  if (auto row = ctor.RegisterStruct<ServerRow>()) {
-    row.RegisterMember("name", &ServerRow::name);
-    row.RegisterMember("detail", &ServerRow::detail);
+  if (auto row = ctor.RegisterStruct<SourceRow>()) {
+    row.RegisterMember("icon", &SourceRow::icon);
+    row.RegisterMember("name", &SourceRow::name);
+    row.RegisterMember("detail", &SourceRow::detail);
   }
-  ctor.RegisterArray<std::vector<ServerRow>>();
+  ctor.RegisterArray<std::vector<SourceRow>>();
 
   if (auto row = ctor.RegisterStruct<EntryRow>()) {
     row.RegisterMember("icon", &EntryRow::icon);
@@ -148,13 +154,13 @@ bool App::SetupDataModel(Rml::Context* context, std::string& error) {
   ctor.Bind("status", &bind_status_);
   ctor.Bind("toast", &bind_toast_);
   ctor.Bind("crumb", &bind_crumb_);
-  ctor.Bind("server_name", &bind_server_name_);
+  ctor.Bind("source_name", &bind_source_name_);
   ctor.Bind("clock", &bind_clock_);
   ctor.Bind("busy", &bind_busy_);
 
-  ctor.Bind("servers", &server_rows_);
-  ctor.Bind("server_count", &server_count_);
-  ctor.Bind("sel_server", &sel_server_);
+  ctor.Bind("sources", &source_rows_);
+  ctor.Bind("source_count", &source_count_);
+  ctor.Bind("sel_source", &sel_source_);
 
   ctor.Bind("entries", &entry_rows_);
   ctor.Bind("entry_count", &entry_count_);
@@ -179,17 +185,17 @@ bool App::SetupDataModel(Rml::Context* context, std::string& error) {
   ctor.Bind("np_art", &bind_np_art_);
 
   // Mouse/touch support on the lists.
-  ctor.BindEventCallback("select_server",
+  ctor.BindEventCallback("select_source",
     [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args) {
       if (args.size() != 1)
         return;
       const int index = args[0].Get<int>(-1);
-      if (index < 0 || index >= (int)servers_.size())
+      if (index < 0 || index >= (int)sources_.size())
         return;
-      if (sel_server_ == index)
-        OpenServer(index);
-      sel_server_ = index;
-      model_.DirtyVariable("sel_server");
+      if (sel_source_ == index)
+        OpenSource(index);
+      sel_source_ = index;
+      model_.DirtyVariable("sel_source");
     });
   ctor.BindEventCallback("select_entry",
     [this](Rml::DataModelHandle, Rml::Event&, const Rml::VariantList& args) {
@@ -197,7 +203,7 @@ bool App::SetupDataModel(Rml::Context* context, std::string& error) {
         return;
       const int index = args[0].Get<int>(-1);
       BrowseLevel* level = CurrentLevel();
-      if (!level || index < 0 || index >= (int)level->objects.size())
+      if (!level || index < 0 || index >= (int)level->entries.size())
         return;
       if (sel_entry_ == index) {
         ActivateSelection();
@@ -246,17 +252,19 @@ void App::Update() {
   {
     std::lock_guard<std::mutex> lock(pending_.mutex);
 
-    if (pending_.servers_ready) {
-      pending_.servers_ready = false;
-      servers_ = std::move(pending_.servers);
-      RebuildServerRows();
-      if (servers_.empty()) {
+    if (pending_.sources_ready) {
+      pending_.sources_ready = false;
+      sources_ = std::move(pending_.sources);
+      RebuildSourceRows();
+      if (sources_.empty()) {
         bind_status_ = pending_.discover_error.empty()
-          ? "No media servers found. Press R to search again."
+          ? "No media sources found."
           : pending_.discover_error;
       } else {
-        bind_status_ = std::to_string(servers_.size()) +
-          (servers_.size() == 1 ? " server found" : " servers found");
+        bind_status_ = std::to_string(sources_.size()) +
+          (sources_.size() == 1 ? " source found" : " sources found");
+        if (!pending_.discover_error.empty())
+          bind_status_ += "  -  " + pending_.discover_error;
       }
       model_.DirtyVariable("status");
     }
@@ -266,17 +274,17 @@ void App::Update() {
       if (pending_.browse_request == browse_request_) {
         if (!pending_.browse_error.empty()) {
           ShowToast(pending_.browse_error);
-          // A failed root browse drops back to the server list.
+          // A failed root browse drops back to the source list.
           if (path_.empty()) {
-            view_ = View::Servers;
-            bind_view_ = "servers";
+            view_ = View::Sources;
+            bind_view_ = "sources";
             model_.DirtyVariable("view");
           }
         } else {
           BrowseLevel level;
-          level.object_id = pending_.browse_object_id;
+          level.id = pending_.browse_id;
           level.title = pending_.browse_title;
-          level.objects = std::move(pending_.browse.objects);
+          level.entries = std::move(pending_.browse.entries);
           path_.push_back(std::move(level));
           sel_entry_ = 0;
           RebuildEntryRows();
@@ -338,9 +346,9 @@ void App::Update() {
     EnsureRowVisible("entry-list", sel_entry_, kEntryRowPitch);
     scroll_entries_pending_ = false;
   }
-  if (scroll_servers_pending_) {
-    EnsureRowVisible("server-list", sel_server_, kServerRowPitch);
-    scroll_servers_pending_ = false;
+  if (scroll_sources_pending_) {
+    EnsureRowVisible("source-list", sel_source_, kSourceRowPitch);
+    scroll_sources_pending_ = false;
   }
 }
 
@@ -397,8 +405,8 @@ void App::ProcessEvent(Rml::Event& event) {
     HandleKeyWatch(event, key);
     return;
   }
-  if (view_ == View::Servers) {
-    HandleKeyServers(event, key);
+  if (view_ == View::Sources) {
+    HandleKeySources(event, key);
     return;
   }
   HandleKeyBrowse(event, key);
@@ -441,7 +449,15 @@ constexpr size_t kMaxArtBytes = 12 * 1024 * 1024;
 } // namespace
 
 std::string App::ArtPathFor(const std::string& url) {
-  if (url.empty() || art_dir_.empty())
+  if (url.empty())
+    return {};
+
+  // Local paths (filesystem sources) need no download; RmlUi loads them
+  // through the file interface directly.
+  if (url[0] == '/')
+    return url;
+
+  if (art_dir_.empty())
     return {};
 
   auto it = art_paths_.find(url);
@@ -487,8 +503,8 @@ void App::RefreshArtBindings() {
   // Details pane follows the browse selection.
   Rml::String detail;
   if (view_ == View::Browse) {
-    if (const upnp::DidlObject* obj = SelectedObject())
-      detail = ArtPathFor(obj->ArtUrl());
+    if (const browse::Entry* entry = SelectedEntry())
+      detail = ArtPathFor(entry->art_url);
   }
   if (bind_detail_art_ != detail) {
     bind_detail_art_ = detail;
@@ -498,7 +514,7 @@ void App::RefreshArtBindings() {
   // Now-playing card / transport bar follows the playing item.
   Rml::String np;
   if (bind_watching_)
-    np = ArtPathFor(playing_.ArtUrl());
+    np = ArtPathFor(playing_.art_url);
   if (bind_np_art_ != np) {
     bind_np_art_ = np;
     model_.DirtyVariable("np_art");
