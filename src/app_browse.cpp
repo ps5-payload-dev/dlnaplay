@@ -54,10 +54,8 @@ void App::StartDiscovery() {
       upnp::MediaServer server;
       std::string derr;
 
-	std::cout << r.location << std::endl ;     
       if (upnp::DescribeServer(r.location, server, derr)) {
         servers.push_back(std::move(server));
-	std::cout << server.udn << std::endl;
       }
     }
     // The same server can answer on several interfaces with different
