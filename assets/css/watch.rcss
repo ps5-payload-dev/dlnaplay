@@ -122,6 +122,7 @@ body.watching #shell {
 	background-color: #101827f2;
 	border: 2px #ffffff14;
 	border-radius: 22px;
+	opacity: 0.7;
 }
 
 #audio-card .art {
