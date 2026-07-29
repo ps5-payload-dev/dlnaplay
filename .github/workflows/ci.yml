@@ -39,7 +39,7 @@ jobs:
 
       - name: Bundle
         run: |
-          zip -r DLNAPlay.zip assets dlnaplay fonts homebrew.js
+          zip -r DLNAPlay.zip assets dlnaplay fonts plugins homebrew.js
 
       - name: Upload
         uses: actions/upload-artifact@v4

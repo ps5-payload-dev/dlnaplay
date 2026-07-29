@@ -15,6 +15,7 @@ pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET
                          libavcodec libavformat libavutil libswresample libswscale)
 pkg_check_modules(SDL2_IMAGE REQUIRED IMPORTED_TARGET SDL2_image)
 pkg_check_modules(TINYXML2 REQUIRED IMPORTED_TARGET tinyxml2)
+pkg_check_modules(LUA REQUIRED IMPORTED_TARGET luajit)
 
 add_executable(dlnaplay
     src/main.cpp
@@ -25,6 +26,7 @@ add_executable(dlnaplay
     src/visualizer.cpp
     src/browse/dlna_source.cpp
     src/browse/fs_source.cpp
+    src/browse/lua_source.cpp
     src/upnp/http.cpp
     src/upnp/ssdp.cpp
     src/upnp/dlna.cpp
@@ -45,5 +47,6 @@ target_link_libraries(dlnaplay PRIVATE
     PkgConfig::FFMPEG
     PkgConfig::SDL2_IMAGE
     PkgConfig::TINYXML2
+    PkgConfig::LUA
     Threads::Threads
 )

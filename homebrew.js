@@ -11,6 +11,7 @@ async function main() {
 		cwd: CWD,
 		args: ['--assets', CWD + '/assets',
 		       '--fonts', CWD + '/fonts',
+		       '--plugins', CWD + '/plugins',
 		       '--cache', CWD + '/cache']
 	    };
         }

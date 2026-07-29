@@ -20,6 +20,8 @@ static void PrintUsage(const char* argv0) {
     "                     (default: ./assets)\n"
     "  -f, --fonts DIR    font directory\n"
     "                     (default: <assets>/../fonts)\n"
+    "  -p, --plugins DIR  Lua plugin directory\n"
+    "                     (default: <assets>/../plugins)\n"
     "  -c, --cache DIR    artwork cache directory\n"
     "                     (default: $XDG_CACHE_HOME/dlnaplay,\n"
     "                      i.e. ~/.cache/dlnaplay)\n"
@@ -45,6 +47,7 @@ int main(int argc, char* argv[]) {
 
     if (arg("-a", "--assets"))     options.assets_dir = value();
     else if (arg("-f", "--fonts")) fonts_dir = value();
+    else if (arg("-p", "--plugins")) options.plugins_dir = value();
     else if (arg("-c", "--cache")) options.cache_dir = value();
     else if (arg("-h", "--help")) { PrintUsage(argv[0]); return 0; }
     else {
@@ -60,6 +63,8 @@ int main(int argc, char* argv[]) {
     options.assets_dir.pop_back();
   if (fonts_dir.empty())
     fonts_dir = options.assets_dir + "/../fonts";
+  if (options.plugins_dir.empty())
+    options.plugins_dir = options.assets_dir + "/../plugins";
 
   Rml::Context* ctx;
   std::string err;
