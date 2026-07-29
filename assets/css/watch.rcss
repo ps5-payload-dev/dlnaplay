@@ -112,8 +112,8 @@ body.watching #shell {
 	position: absolute;
 	left: 50%;
 	top: 50%;
-	margin-left: -450px;
-	margin-top: -290px;
+	margin-left: -506px;
+	margin-top: -400px;
 	width: 900px;
 	padding: 56px 64px;
 	display: flex;
