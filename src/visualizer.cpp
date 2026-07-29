@@ -22,13 +22,6 @@ constexpr float kPi = 3.14159265358979f;
 constexpr float kHueLow = 0.464f;   // #4dd6b8
 constexpr float kHueHigh = 0.687f;  // #7c6cf0
 
-// Base ellipse the ring and the beat pulses grow from, as a fraction of the
-// window height. Sized to sit just inside the 900x580 now-playing card at
-// the app's 1920x1080 context, so the card conceals the base and the spikes
-// appear to radiate out from behind it.
-constexpr float kRingRx = 0.410f;
-constexpr float kRingRy = 0.265f;
-
 // Height of the offscreen target, and the one knob worth touching if this
 // costs too much on your setup. Everything except the fixed overhead (the
 // FFT and the upscale blit, together about 1.5 ms) scales with its square:

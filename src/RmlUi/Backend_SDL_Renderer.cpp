@@ -9,7 +9,7 @@
 
 
 struct BackendData {
-  BackendData(SDL_Window* window, SDL_Renderer* renderer) : system_interface(window), render_interface(renderer) {}
+  BackendData(SDL_Window* window, SDL_Renderer* renderer) : render_interface(renderer) {}
 
   SystemInterface_SDL system_interface;
   RenderInterface_SDL render_interface;

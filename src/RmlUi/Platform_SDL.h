@@ -10,7 +10,7 @@
 
 class SystemInterface_SDL : public Rml::SystemInterface {
 public:
-	SystemInterface_SDL(SDL_Window* window);
+	SystemInterface_SDL();
 	~SystemInterface_SDL();
 
 	// -- Inherited from Rml::SystemInterface  --
@@ -31,8 +31,6 @@ public:
 	void DeactivateKeyboard() override;
 
 private:
-	SDL_Window* window = nullptr;
-
 	SDL_Cursor* cursor_default = nullptr;
 	SDL_Cursor* cursor_move = nullptr;
 	SDL_Cursor* cursor_pointer = nullptr;

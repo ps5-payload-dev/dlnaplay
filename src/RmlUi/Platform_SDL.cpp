@@ -7,8 +7,7 @@
 #include "Platform_SDL.h"
 
 
-SystemInterface_SDL::SystemInterface_SDL(SDL_Window* in_window)
-  : window(in_window) {
+SystemInterface_SDL::SystemInterface_SDL() {
   cursor_default = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
   cursor_move = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_SIZEALL);
   cursor_pointer = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
