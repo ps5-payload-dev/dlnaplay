@@ -319,6 +319,7 @@ bool Player::OpenInput(const std::string& url, std::string& error)
 		AVCodecContext* ctx = avcodec_alloc_context3(codec);
 		if (!ctx)
 			return false;
+		ctx->thread_count = 0;
 		if (avcodec_parameters_to_context(ctx, st->codecpar) < 0 || avcodec_open2(ctx, codec, nullptr) < 0)
 		{
 			avcodec_free_context(&ctx);
